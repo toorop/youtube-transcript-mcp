@@ -1,6 +1,6 @@
 # YouTube Transcript Server
 
-A simple server to fetch the transcript of a YouTube video using `yt-dlp`.
+A simple MCP server to fetch the transcript of a YouTube video using `yt-dlp`.
 
 - ✅ **Reliable**: Uses `yt-dlp` to fetch transcripts, which is regularly updated to handle YouTube's changes.
 - ✅ **Containerized**: Runs in a Docker container for easy deployment and portability.
@@ -60,7 +60,7 @@ Make a GET request to the `/test_transcript` endpoint, providing the ID of the Y
 
 **Example using `curl`:**
 ```bash
-curl -H "X-API-KEY: your-super-secret-api-key" "http://localhost:5000/test_transcript?videoId=aT04DvIiovI"
+curl -H "X-API-KEY: your-super-secret-api-key" "http://localhost:5000/test_transcript?videoId=ID"
 ```
 
 ### / Endpoint (MCP)
@@ -69,7 +69,7 @@ Make a POST request to the `/` endpoint with a JSON-RPC 2.0 message and your API
 
 **Example using `curl`:**
 ```bash
-curl -X POST -H "Content-Type: application/json" -H "X-API-KEY: your-super-secret-api-key" -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_transcript","arguments":{"url":"https://www.youtube.com/watch?v=aT04DvIiovI"}}}' http://localhost:5000/
+curl -X POST -H "Content-Type: application/json" -H "X-API-KEY: your-super-secret-api-key" -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_transcript","arguments":{"url":"https://www.youtube.com/watch?v=ID"}}}' http://localhost:5000/
 ```
 
 ### Successful Response (`200 OK`)
