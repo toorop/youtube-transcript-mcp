@@ -10,7 +10,7 @@ RUN wget https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -O /us
     chmod a+rx /usr/local/bin/yt-dlp
 
 # Install dependencies
-RUN pip install Flask webvtt-py Flask-Cors
+RUN pip install fastmcp webvtt-py uvicorn starlette
 
 # Copy the web server code
 COPY server.py /app/
