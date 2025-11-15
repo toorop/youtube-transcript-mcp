@@ -24,8 +24,9 @@ The service is containerized with Docker for easy deployment.
 
 **Authentication Flow**:
 - API keys loaded from `api_keys.json` at startup
-- `@require_api_key` decorator protects endpoints
-- Can be disabled via `AUTH_ENABLED=false` environment variable
+- `@require_api_key` decorator protects legacy HTTP endpoints (`/`, `/test_transcript`)
+- SSE endpoints (`/sse`) are NOT protected by the decorator (use reverse proxy for auth)
+- Can be disabled via `AUTH_ENABLED=false` environment variable (useful when using reverse proxy for all endpoints)
 - OPTIONS requests bypass authentication for CORS preflight
 
 **Transcript Extraction Process**:
@@ -156,11 +157,27 @@ Headers: X-API-KEY: your-api-key
 Body: {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_transcript","arguments":{"url":"VIDEO_URL","language":"en"}}}
 ```
 
+## Authentication Strategies
+
+The server supports two authentication approaches:
+
+**Strategy 1: Hybrid Authentication (default, `AUTH_ENABLED=true`)**
+- SSE endpoints (`/sse`): Protected by reverse proxy (Caddy with Basic Auth, API Key, or IP whitelist)
+- Legacy HTTP endpoints (`/`, `/test_transcript`): Protected by server with `X-API-KEY` header
+- Use case: Different clients with different auth methods (e.g., Claude Desktop uses Caddy auth, n8n uses X-API-KEY)
+
+**Strategy 2: Reverse Proxy Only (`AUTH_ENABLED=false`)**
+- ALL endpoints protected by reverse proxy (Caddy with Basic Auth or API Key header)
+- Server-level authentication completely disabled
+- Use case: Centralized authentication, single auth mechanism, simplified configuration
+
+**When to use each:**
+- Use Strategy 1 if you want flexibility (some clients use Basic Auth, others use API keys)
+- Use Strategy 2 if you want simplicity (all authentication handled by Caddy, no need for `api_keys.json`)
+
 ## Important Notes
 
 - The server processes one transcript request at a time (synchronous subprocess calls)
 - Temporary `.vtt` files are created in the working directory and deleted after parsing
 - Video ID extraction supports: `youtube.com/watch?v=`, `youtu.be/`, `youtube.com/embed/`, and raw 11-character IDs
-- SSE endpoints (`/sse`) are **not authenticated** - use Caddy for access control
-- Legacy endpoints (`/`, `/test_transcript`) require `X-API-KEY` header (unless `AUTH_ENABLED=false`)
 - The MCP `tools/call` response includes both `content` (JSON string) and `structuredContent` (JSON object) fields

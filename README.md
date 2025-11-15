@@ -113,10 +113,19 @@ The server exposes multiple endpoints supporting different transport protocols:
 
 ### Authentication
 
-- **SSE endpoints** (`/sse`): Not authenticated by default - use your reverse proxy for access control
-- **HTTP endpoints** (`/`, `/test_transcript`): Protected with `X-API-KEY` header
+The server supports two authentication strategies:
 
-To disable authentication for HTTP endpoints, set `AUTH_ENABLED=false` in `docker-compose.yml`.
+**Strategy 1: Hybrid (default)**
+- **SSE endpoints** (`/sse`): Not authenticated by server - protect with reverse proxy (Caddy, Nginx)
+- **HTTP endpoints** (`/`, `/test_transcript`): Protected with `X-API-KEY` header
+- Best for: Different clients with different auth methods (Claude Desktop via Caddy, n8n via API key)
+
+**Strategy 2: Reverse Proxy Only**
+- Set `AUTH_ENABLED=false` in `docker-compose.yml` to disable server-level auth
+- Protect ALL endpoints (including `/sse`, `/`, `/test_transcript`) with your reverse proxy
+- Best for: Centralized authentication, single auth mechanism for all clients
+
+See [Securing the SSE Endpoint](#securing-the-sse-endpoint) for detailed Caddy configuration examples.
 
 ---
 
@@ -309,7 +318,23 @@ In a new conversation, the `get_transcript` tool should now be available. Test i
 
 Since SSE endpoints are not authenticated by default, protect them with your reverse proxy.
 
-#### Example 1: Caddy with Basic Auth
+#### Authentication Strategy
+
+You have two options for authentication:
+
+**Option A: Protect only `/sse` with Caddy (recommended)**
+- Use Caddy to authenticate `/sse/*` endpoints
+- Keep `AUTH_ENABLED=true` (default) for legacy HTTP endpoints (`/`, `/test_transcript`)
+- Benefits: Claude Desktop uses Caddy auth, n8n/HTTP clients use X-API-KEY header
+
+**Option B: Protect ALL endpoints with Caddy**
+- Use Caddy to authenticate ALL requests
+- Set `AUTH_ENABLED=false` in `docker-compose.yml` to disable server-level auth
+- Benefits: Centralized authentication, single auth mechanism
+
+Choose Option A if you want different auth methods for different clients, or Option B for unified authentication.
+
+#### Example 1: Caddy with Basic Auth (SSE only - Option A)
 
 **Generate password hash:**
 ```bash
@@ -343,7 +368,7 @@ your-domain.com {
 }
 ```
 
-#### Example 2: Caddy with API Key Header
+#### Example 2: Caddy with API Key Header (SSE only - Option A)
 
 **Caddyfile:**
 ```caddy
@@ -384,7 +409,7 @@ your-domain.com {
 }
 ```
 
-#### Example 3: IP Whitelist (no credentials needed)
+#### Example 3: IP Whitelist (SSE only - Option A)
 
 **Caddyfile:**
 ```caddy
@@ -420,6 +445,125 @@ your-domain.com {
   }
 }
 ```
+
+#### Example 4: Protect ALL Endpoints with Basic Auth (Option B)
+
+If you want to centralize all authentication at the reverse proxy level, use this configuration and disable server-level auth.
+
+**Step 1: Generate password hash**
+```bash
+caddy hash-password
+```
+
+**Step 2: Update docker-compose.yml**
+```yaml
+version: '3.8'
+services:
+  web:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      - AUTH_ENABLED=false  # Disable server-level auth
+```
+
+**Step 3: Configure Caddyfile**
+```caddy
+your-domain.com {
+    # Apply basic auth to ALL endpoints
+    basicauth /* {
+        alice $2a$14$hashed_password_here
+        bob $2a$14$another_hashed_password
+    }
+
+    reverse_proxy localhost:5000
+}
+```
+
+**Claude Desktop configuration:**
+```json
+{
+  "mcpServers": {
+    "youtube-transcript": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://alice:your-password@your-domain.com/sse"
+      ]
+    }
+  }
+}
+```
+
+**n8n HTTP Request configuration:**
+- **Method**: POST
+- **URL**: `https://your-domain.com/`
+- **Authentication**: Basic Auth
+  - Username: `alice`
+  - Password: `your-password`
+- **Headers**: `Content-Type: application/json`
+- **Body**: (same JSON-RPC format as before)
+
+**Note:** With this setup, you no longer need to provide `X-API-KEY` headers, as all authentication is handled by Caddy.
+
+#### Example 5: Protect ALL Endpoints with API Key Header (Option B)
+
+Alternative approach using custom headers instead of Basic Auth.
+
+**Step 1: Update docker-compose.yml**
+```yaml
+version: '3.8'
+services:
+  web:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      - AUTH_ENABLED=false  # Disable server-level auth
+```
+
+**Step 2: Configure Caddyfile**
+```caddy
+your-domain.com {
+    @authenticated {
+        header X-API-Key "your-secret-api-key-here"
+    }
+
+    handle @authenticated {
+        reverse_proxy localhost:5000
+    }
+
+    # Reject all requests without valid API key
+    handle {
+        respond "Unauthorized" 401
+    }
+}
+```
+
+**Claude Desktop configuration:**
+```json
+{
+  "mcpServers": {
+    "youtube-transcript": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "--header",
+        "X-API-Key: your-secret-api-key-here",
+        "https://your-domain.com/sse"
+      ]
+    }
+  }
+}
+```
+
+**n8n HTTP Request configuration:**
+- **Method**: POST
+- **URL**: `https://your-domain.com/`
+- **Headers**:
+  - `Content-Type: application/json`
+  - `X-API-Key: your-secret-api-key-here`
+- **Body**: (same JSON-RPC format as before)
 
 ---
 
