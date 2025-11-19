@@ -11,6 +11,7 @@ from starlette.routing import Route, Mount
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 # Initialize FastMCP server
 mcp = FastMCP("youtube-transcript-custom")
@@ -277,6 +278,9 @@ app = Starlette(
         Route("/", legacy_mcp_handler, methods=["POST", "OPTIONS"]),
     ]
 )
+
+# Add proxy headers middleware (MUST be added first)
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
 # Add CORS middleware
 app.add_middleware(
