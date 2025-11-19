@@ -271,11 +271,13 @@ async def legacy_mcp_handler(request: Request):
 # Create Starlette app with all routes
 app = Starlette(
     routes=[
-        # SSE endpoint for Claude Desktop (via mcp-remote)
-        Mount("/sse", app=mcp.sse_app()),
-        # Legacy endpoints for n8n
+        # 1. D'abord les routes spécifiques (Legacy n8n)
         Route("/test_transcript", test_transcript_handler, methods=["GET"]),
         Route("/", legacy_mcp_handler, methods=["POST", "OPTIONS"]),
+        
+        # 2. Ensuite le Mount à la racine (Catch-all)
+        # Comme il est à la racine "/", il passera "/sse" directement à l'app MCP
+        Mount("/", app=mcp.sse_app()),
     ]
 )
 
