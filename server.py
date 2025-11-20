@@ -45,48 +45,87 @@ def vtt_to_json(vtt_file: str) -> list[dict]:
     return captions
 
 def fetch_transcript(video_id: str, lang: str = 'en') -> dict:
-    """Fetch YouTube transcript using yt-dlp"""
-    try:
-        # Use yt-dlp to download the transcript
-        result = subprocess.run(
-            [
-                'yt-dlp',
-                '--extractor-args', 'youtube:player_client=default',
-                '--write-auto-sub',
-                '--skip-download',
-                '--sub-lang',
-                lang,
-                f'https://www.youtube.com/watch?v={video_id}',
-                '-o',
-                f'{video_id}.%(ext)s'
-            ],
-            capture_output=True,
-            text=True
-        )
+    """Fetch YouTube transcript using yt-dlp with language fallback"""
 
-        if result.returncode != 0:
-            return {'success': False, 'error': 'Failed to fetch transcript', 'details': result.stderr}
+    # Define language fallback strategy
+    # Try requested language first, then common fallbacks
+    if lang == 'en':
+        lang_attempts = ['en', 'fr', 'es', 'de', 'pt', 'ja', 'ko']
+    elif lang == 'fr':
+        lang_attempts = ['fr', 'fr-orig', 'en', 'es', 'de']
+    else:
+        lang_attempts = [lang, 'en', 'fr', 'es']
 
-        # Find the downloaded transcript file
-        transcript_file = None
-        for file in os.listdir('.'):
-            if file.startswith(video_id) and file.endswith('.vtt'):
-                transcript_file = file
-                break
+    last_error_details = None
 
-        if not transcript_file:
-            return {'success': False, 'error': 'Transcript file not found'}
+    for attempt_lang in lang_attempts:
+        try:
+            # Clean up any existing VTT files before attempting download
+            for file in os.listdir('.'):
+                if file.startswith(video_id) and file.endswith('.vtt'):
+                    os.remove(file)
 
-        # Parse the transcript file
-        transcript_json = vtt_to_json(transcript_file)
+            # Use yt-dlp to download the transcript
+            result = subprocess.run(
+                [
+                    'yt-dlp',
+                    '--extractor-args', 'youtube:player_client=default',
+                    '--write-auto-sub',
+                    '--skip-download',
+                    '--sub-lang',
+                    attempt_lang,
+                    f'https://www.youtube.com/watch?v={video_id}',
+                    '-o',
+                    f'{video_id}.%(ext)s'
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
 
-        # Delete the transcript file
-        os.remove(transcript_file)
+            # Don't rely on returncode - check if VTT file was created instead
+            # yt-dlp may return non-zero even if subtitles were downloaded successfully
+            transcript_file = None
+            for file in os.listdir('.'):
+                if file.startswith(video_id) and file.endswith('.vtt'):
+                    transcript_file = file
+                    break
 
-        return {'success': True, 'transcript': transcript_json}
+            if transcript_file:
+                # Success! Parse the transcript file
+                transcript_json = vtt_to_json(transcript_file)
 
-    except Exception as e:
-        return {'success': False, 'error': 'An unexpected error occurred', 'details': str(e)}
+                # Extract the actual language from filename (e.g., "videoId.fr.vtt" -> "fr")
+                file_parts = transcript_file.split('.')
+                actual_lang = file_parts[-2] if len(file_parts) >= 3 else attempt_lang
+
+                # Delete the transcript file
+                os.remove(transcript_file)
+
+                return {
+                    'success': True,
+                    'transcript': transcript_json,
+                    'language': actual_lang,
+                    'requested_language': lang
+                }
+
+            # No file found, save error and continue to next language
+            last_error_details = result.stderr if result.stderr else f"No subtitles for '{attempt_lang}'"
+
+        except subprocess.TimeoutExpired:
+            last_error_details = f"Timeout fetching subtitles for '{attempt_lang}'"
+            continue
+        except Exception as e:
+            last_error_details = f"Error with '{attempt_lang}': {str(e)}"
+            continue
+
+    # All language attempts failed
+    return {
+        'success': False,
+        'error': 'Failed to fetch transcript in any available language',
+        'details': last_error_details,
+        'attempted_languages': lang_attempts
+    }
 
 # MCP Tool: Get Transcript
 @mcp.tool()
@@ -99,7 +138,7 @@ def get_transcript(url: str, language: str = "en") -> dict[str, Any]:
         language: Optional language code (e.g., "en", "fr"). Defaults to "en"
 
     Returns:
-        Dictionary containing the transcript with start, end, and text fields
+        Dictionary containing the transcript with start, end, text fields, and language info
     """
     video_id = extract_video_id(url)
     if not video_id:
@@ -108,9 +147,17 @@ def get_transcript(url: str, language: str = "en") -> dict[str, Any]:
     result = fetch_transcript(video_id, language)
 
     if result['success']:
-        return {'transcript': result['transcript']}
+        return {
+            'transcript': result['transcript'],
+            'language': result.get('language'),
+            'requested_language': result.get('requested_language')
+        }
     else:
-        return {'error': result.get('error', 'Unknown error'), 'details': result.get('details', '')}
+        return {
+            'error': result.get('error', 'Unknown error'),
+            'details': result.get('details', ''),
+            'attempted_languages': result.get('attempted_languages', [])
+        }
 
 # Authentication middleware for legacy endpoints
 def require_api_key(func):
@@ -231,7 +278,11 @@ async def legacy_mcp_handler(request: Request):
         result = fetch_transcript(video_id, lang)
 
         if result['success']:
-            payload = {'transcript': result['transcript']}
+            payload = {
+                'transcript': result['transcript'],
+                'language': result.get('language'),
+                'requested_language': result.get('requested_language')
+            }
             response = {
                 'jsonrpc': '2.0',
                 'id': message['id'],
@@ -252,7 +303,9 @@ async def legacy_mcp_handler(request: Request):
                 'id': message['id'],
                 'error': {
                     'code': -1,
-                    'message': result.get('error', 'Unknown error')
+                    'message': result.get('error', 'Unknown error'),
+                    'details': result.get('details', ''),
+                    'attempted_languages': result.get('attempted_languages', [])
                 }
             }
             return JSONResponse(response)

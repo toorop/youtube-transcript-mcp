@@ -32,9 +32,11 @@ The service is containerized with Docker for easy deployment.
 **Transcript Extraction Process**:
 1. Extract video ID from URL using regex patterns (supports multiple YouTube URL formats)
 2. Execute `yt-dlp` subprocess with `--write-auto-sub --skip-download` flags
-3. Parse generated `.vtt` file using `webvtt-py` library
-4. Convert to JSON structure with `start`, `end`, `text` fields
-5. Clean up temporary `.vtt` file
+3. **Language fallback strategy**: Attempts requested language first, then falls back to common languages (en→fr→es→de→pt→ja→ko)
+4. **Robust error handling**: Checks for `.vtt` file creation instead of relying on returncode (yt-dlp may return non-zero even on success)
+5. Parse generated `.vtt` file using `webvtt-py` library
+6. Convert to JSON structure with `start`, `end`, `text` fields, plus `language` and `requested_language` metadata
+7. Clean up temporary `.vtt` file
 
 ### MCP Protocol Implementation
 
@@ -180,4 +182,7 @@ The server supports two authentication approaches:
 - The server processes one transcript request at a time (synchronous subprocess calls)
 - Temporary `.vtt` files are created in the working directory and deleted after parsing
 - Video ID extraction supports: `youtube.com/watch?v=`, `youtu.be/`, `youtube.com/embed/`, and raw 11-character IDs
+- **Language fallback**: If requested language is unavailable, server automatically tries common alternatives (en→fr→es→de, etc.)
+- **Response format**: All endpoints now return `language` (actual language obtained) and `requested_language` fields
+- **Error handling**: yt-dlp returncode is ignored; success determined by `.vtt` file creation
 - The MCP `tools/call` response includes both `content` (JSON string) and `structuredContent` (JSON object) fields

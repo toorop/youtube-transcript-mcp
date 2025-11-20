@@ -153,9 +153,13 @@ curl -H "X-API-KEY: your-api-key" \
       "end": "00:00:02.500",
       "text": "Hello world"
     }
-  ]
+  ],
+  "language": "en",
+  "requested_language": "en"
 }
 ```
+
+**Note:** If the requested language is unavailable, the server automatically falls back to common alternatives (en→fr→es→de→pt, etc.). The `language` field shows the actual language obtained.
 
 ---
 
@@ -197,7 +201,7 @@ curl -X POST \
     "content": [
       {
         "type": "text",
-        "text": "{\"transcript\":[{\"start\":\"00:00:00.000\",\"end\":\"00:00:02.500\",\"text\":\"Hello world\"}]}"
+        "text": "{\"transcript\":[{\"start\":\"00:00:00.000\",\"end\":\"00:00:02.500\",\"text\":\"Hello world\"}],\"language\":\"en\",\"requested_language\":\"en\"}"
       }
     ],
     "structuredContent": {
@@ -207,7 +211,9 @@ curl -X POST \
           "end": "00:00:02.500",
           "text": "Hello world"
         }
-      ]
+      ],
+      "language": "en",
+      "requested_language": "en"
     }
   }
 }
@@ -220,7 +226,9 @@ curl -X POST \
   "id": 1,
   "error": {
     "code": -1,
-    "message": "Invalid YouTube URL"
+    "message": "Failed to fetch transcript in any available language",
+    "details": "No subtitles for 'pt'",
+    "attempted_languages": ["en", "fr", "es", "de", "pt"]
   }
 }
 ```
